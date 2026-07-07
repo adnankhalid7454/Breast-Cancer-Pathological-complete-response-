@@ -1,10 +1,10 @@
-# Multi-Modal GatedFusion_MultiEncoder for pCR Classification from Breast MRI
+# Multi-encoder Gated Fusion pCR Classification from Breast MRI
 
 A multi-modal deep learning pipeline that predicts pathological complete
 response (pCR) from breast MRI. It fuses three modalities — clinical
 variables, tumor-level radiomics, and breast-level enhancement/ratio
 features — through a TabNet-style sparse-attention encoder per modality and
-a learned gated fusion layer (`GatedFusion_MultiEncoder`).
+a learned gated fusion layer.
 
 The full pipeline has three stages:
 
@@ -35,7 +35,7 @@ The full pipeline has three stages:
   │ MRI + masks -> tumor-level radiomics, breast-level    │
   │ enhancement/ratio features, merged with clinical data │
   └───────────────────────────────────────────────────┘
-        │  produces 3 CSVs: clinical / tumor-level / breast-level (enhancement+ratio combined)
+        │  produces 3 CSVs: clinical / tumor-level / breast-level
         ▼
   ┌───────────────────────────────────────────────────┐
   │ STEP 3 — Classification                               │   src/predict.py
@@ -46,14 +46,9 @@ The full pipeline has three stages:
         ▼
   predictions.csv  (predicted pCR class + per-class probability)
 ```
-
-If you want to retrain or reproduce the reported cross-validation / external
-validation results instead of just running inference, use `src/train.py`
-(see [Usage](#usage) below).
-
 ---
 
-## Step 1 — Tumor + breast segmentation (external, not included here)
+## Step 1 — Tumor + breast segmentation
 
 This repo starts from **already-segmented** tumor and whole-breast masks.
 Segmentation itself is not implemented here — use one of these existing,
@@ -88,7 +83,7 @@ by the model:
 |---|---|---|
 | 0 — Clinical | `clinical_features.csv` | Patient IDs merged with your own clinical CSV (age, molecular subtype, receptor status, etc.) if you provide one via `CLINICAL_CSV`; otherwise just patient IDs. |
 | 1 — Tumor-level | `tumor_level_features.csv` | PyRadiomics features (post-contrast intensity + relative-enhancement texture/shape) computed on the tumor mask, plus tumor enhancement-curve statistics. |
-| 2 — Breast-level | `breast_level_enhancement_features.csv` | Breast-side and background-breast enhancement statistics **merged with** tumor-to-breast and tumor-to-background ratio features — computed together per patient inside `build_combined_breast_features()`, so this single file already contains both. |
+| 2 — Breast-level | `breast_level_enhancement_features.csv` | Breast-side and background-breast enhancement statistics & tumor-to-breast and tumor-to-background ratio features — computed together per patient inside `build_combined_breast_features()` |
 
 ### Expected input layout
 
@@ -135,16 +130,12 @@ This writes to `OUTPUT_DIR`:
 - `qc_selected_features.csv` — per-patient QC info (voxel counts, mask volumes, failure reasons for any skipped patients)
 - `dataset1_manifest_found.csv` — which patient folders were discovered and whether all required files were found
 
-Run this once for your training cohort and, separately, for any new cohort
-you want to predict on (pointing `PATIENT_ROOT`/`TUMOR_MASK_DIR`/`OUTPUT_DIR`
-at the new cohort's data).
-
 ---
 
 ## Step 3 — Classification (included: `src/predict.py`)
 
 Feed the 3 CSVs produced in Step 2 into the trained `GatedFusion_MultiEncoder`
-model to get pCR predictions. See [Usage](#usage) below for exact commands.
+model to get pCR predictions. 
 
 ---
 
@@ -185,133 +176,10 @@ extraction), also install `SimpleITK`, `pyradiomics`, and `tqdm` (see above).
 
 ## Getting the trained weights
 
-Model checkpoints (`.pt` files) are **not committed to this repo** (see
-`.gitignore`) since they're large binary files. Attach them to a
-[GitHub Release](https://docs.github.com/en/repositories/releasing-projects-on-github)
-or host them via Git LFS / Zenodo, and link them here, e.g.:
+Model checkpoints (see
+> Download `best_model.pt` from the   https://doi.org/10.5281/zenodo.21238902
 
-> Download `best_model.pt` (and/or the 5 per-fold checkpoints) from the
-> [Releases page](../../releases) and place them under `results/models/`.
 
 ---
 
-## Usage
 
-### Train (reproduce CV + external validation, or retrain on your own cohort)
-
-```bash
-python -m src.train \
-  --clinical_csv data/train/clinical_features.csv \
-  --tumor_csv data/train/tumor_level_features.csv \
-  --ratio_csv data/train/breast_level_enhancement_features.csv \
-  --target_csv data/train/pcr_target.csv \
-  --ext_clinical_csv data/external/clinical_features.csv \
-  --ext_tumor_csv data/external/tumor_level_features.csv \
-  --ext_ratio_csv data/external/breast_level_enhancement_features.csv \
-  --ext_target_csv data/external/pcr_target.csv \
-  --out_dir results \
-  --n_trials 30
-```
-
-(`--ratio_csv` takes the combined breast-level file from Step 2 — its name is
-kept as `--ratio_csv` for backward compatibility, but it already contains
-both the enhancement and ratio features.)
-
-Outputs (under `results/`):
-- `models/fold{1..5}_model.pt` — one checkpoint per fold, each containing
-  model weights **and** that fold's fitted preprocessing pipelines (required
-  for correct reuse on new data — see note below).
-- `models/best_model.pt` — the fold with the best CV balanced accuracy.
-- `cm_fold*_cv.png`, `cm_fold*_external.png`, `cm_external_ensemble.png`
-- `summary_metrics.csv` — mean ± std of all metrics, CV and external.
-
-Drop the `--ext_*` flags entirely if you have no external validation cohort.
-
-### Predict on new data (Step 3)
-
-Run Step 1 (segmentation) and Step 2 (`radiomics_extraction.py`) on your new
-cohort first, then:
-
-Single model:
-```bash
-python -m src.predict \
-  --checkpoint results/models/best_model.pt \
-  --clinical_csv new_cohort/clinical_features.csv \
-  --tumor_csv new_cohort/tumor_level_features.csv \
-  --ratio_csv new_cohort/breast_level_enhancement_features.csv \
-  --out_csv predictions.csv
-```
-
-5-fold ensemble (majority vote + averaged probability, matching how external
-validation was reported during training):
-```bash
-python -m src.predict \
-  --checkpoint_dir results/models \
-  --clinical_csv new_cohort/clinical_features.csv \
-  --tumor_csv new_cohort/tumor_level_features.csv \
-  --ratio_csv new_cohort/breast_level_enhancement_features.csv \
-  --out_csv predictions_ensemble.csv
-```
-
-### Extract model-ready features for QC (optional)
-
-```bash
-python -m src.extract_features \
-  --checkpoint results/models/best_model.pt \
-  --clinical_csv new_cohort/clinical_features.csv \
-  --tumor_csv new_cohort/tumor_level_features.csv \
-  --ratio_csv new_cohort/breast_level_enhancement_features.csv \
-  --out_dir extracted_features/
-```
-
-This applies the exact scaler/feature-selection/PCA fitted during training —
-not a freshly-refit version — so the transformed features are directly
-comparable to what the model saw in training. Useful for sanity-checking a
-new cohort before running full inference.
-
----
-
-## Important implementation notes
-
-- **Checkpoints are self-contained.** Each `.pt` file saves the fitted
-  `RobustScaler` / `SelectKBest` / `PCA` pipeline per modality, the training
-  column names (for aligning new-data columns), and the categorical
-  `LabelEncoder`s — not just model weights. This is required for correct
-  reuse; a model checkpoint without these would silently produce wrong
-  predictions on new data (features would be in a different, unscaled /
-  unselected space than what the model was trained on).
-- **Breast-level features are combined once, at extraction time.** Breast
-  enhancement statistics and tumor-breast ratio features come from the same
-  masks and the same patients, so `radiomics_extraction.py` merges them into
-  a single feature dict per patient (`build_combined_breast_features()`)
-  rather than writing two separate files and joining them later. A couple of
-  volume columns are computed identically by both feature sets; the
-  duplicate is dropped rather than silently overwritten.
-- **Binary-classification metrics.** `Sensitivity`/`Specificity` are computed
-  relative to the positive class for binary problems (not macro-averaged
-  across both classes). A macro-averaged specificity is mathematically
-  identical to Balanced Accuracy for binary problems, which would make three
-  of five reported metrics redundant — this is fixed in `metrics.py`.
-- **No data leakage.** Feature scaling/selection, SMOTE oversampling, and
-  hyperparameter tuning are all fit on the training fold only and applied
-  (not refit) to the held-out test fold / external cohort.
-- **External validation gap.** If external performance is notably lower than
-  CV performance, this is typically domain shift (scanner/protocol
-  differences, segmentation quality, missing columns being zero-filled,
-  etc.) rather than a code issue — check the `WARNING Modality ... cols
-  missing` output when loading a new cohort, and confirm segmentation
-  quality on a few cases visually before trusting the extracted features.
-
----
-
-## Citation
-
-If you use this code, please cite: *(add your paper/preprint reference here)*
-
-Also cite the segmentation tools you use:
-- BreastDivider: https://github.com/MIC-DKFZ/BreastDivider
-- MAMA-MIA: https://github.com/LidiaGarrucho/MAMA-MIA
-
-## License
-
-*(add a LICENSE file — e.g. MIT or Apache-2.0 — before making the repo public)*
