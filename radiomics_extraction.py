@@ -2,9 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-VSCode-friendly compact MRI feature extraction script for Dataset 1 Duke structure.
 
-You only need to edit the paths in the CONFIG section below, then run this file in VSCode.
+You only need to edit the paths in the CONFIG section below, then run this file.
 
 Input structure:
 - PATIENT_ROOT/
