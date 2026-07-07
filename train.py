@@ -1,6 +1,6 @@
 """
-Train the multi-modal TabNet fusion model with 5-fold stratified CV,
-per-fold hyperparameter tuning, and (optional) external validation.
+Train the multi-modal GatedFusion_MultiEncoder model with 5-fold stratified CV,
+per-fold Optuna hyperparameter tuning, and (optional) external validation.
 
 CRITICAL: each fold's checkpoint saves not just the model weights but also
 the FITTED preprocessing pipelines (RobustScaler / SelectKBest / PCA) and
@@ -30,7 +30,7 @@ from scipy import stats as scipy_stats
 import optuna
 
 from src.utils import set_seed, seed_worker, collate_fn, TabularDataset
-from src.model import TabNet
+from src.model import GatedFusion_MultiEncoder
 from src.preprocessing import build_feature_pipeline, fit_transform_pipeline, transform_pipeline, load_data
 from src.metrics import compute_metrics, print_metrics, plot_cm
 
@@ -65,7 +65,7 @@ def run_training(resampled_features, y_resampled, val_features, y_val,
                                generator=g)
     val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, collate_fn=collate_fn)
 
-    model = TabNet(feature_dims, num_classes, n_steps=hp['n_steps'],
+    model = GatedFusion_MultiEncoder(feature_dims, num_classes, n_steps=hp['n_steps'],
                     hidden_dim=hp['hidden_dim'], gamma=hp['gamma'], dropout=hp['dropout'])
     criterion = get_weighted_criterion(y_resampled, num_classes)
     optimizer = optim.Adam(model.parameters(), lr=hp['lr'], weight_decay=hp['weight_decay'])
@@ -292,11 +292,11 @@ def main(args):
 
 
 if __name__ == '__main__':
-    p = argparse.ArgumentParser(description="Train the multi-modal TabNet fusion classifier.")
+    p = argparse.ArgumentParser(description="Train the multi-modal GatedFusion_MultiEncoder classifier.")
     p.add_argument('--clinical_csv', required=True)
     p.add_argument('--tumor_csv', required=True)
     p.add_argument('--ratio_csv', required=True,
-                    help='3rd modality CSV: use breast_ratio_enhancement_features.csv '
+                    help='3rd modality CSV: use breast_level_enhancement_features.csv '
                          '(the combined enhancement+ratio table produced by '
                          'radiomics_extraction.py), not the two separate QC files.')
     p.add_argument('--target_csv', required=True)

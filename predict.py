@@ -1,17 +1,18 @@
 """
 Run inference on a new dataset with a trained checkpoint (or an ensemble
-of per-fold checkpoints, majority-vote + averaged probability).
+of per-fold checkpoints, majority-vote + averaged probability, matching
+the ensembling strategy used during training/external validation).
 
 Input CSVs must be the SAME modalities used in training (clinical /
 tumor-level / tumor-breast-ratio), already produced by your own upstream
-segmentation + feature-extraction pipeline .
+segmentation + feature-extraction pipeline (see README — not part of this repo).
 
 Usage (single best model):
     python -m src.predict \
         --checkpoint results/models/best_model.pt \
         --clinical_csv new_data/clinical_data.csv \
         --tumor_csv new_data/tumor_level_features.csv \
-        --ratio_csv new_data/tumor_breast_ratio_features.csv \
+        --ratio_csv new_data/breast_level_enhancement_features.csv \
         --out_csv predictions.csv
 
 Usage (5-fold ensemble):
@@ -19,7 +20,7 @@ Usage (5-fold ensemble):
         --checkpoint_dir results/models \
         --clinical_csv new_data/clinical_data.csv \
         --tumor_csv new_data/tumor_level_features.csv \
-        --ratio_csv new_data/tumor_breast_ratio_features.csv \
+        --ratio_csv new_data/breast_level_enhancement_features.csv \
         --out_csv predictions_ensemble.csv
 """
 import argparse
@@ -32,13 +33,13 @@ import torch
 import torch.nn.functional as F
 from scipy import stats as scipy_stats
 
-from src.model import TabNet
+from src.model import GatedFusion_MultiEncoder
 from src.preprocessing import load_data, transform_pipeline
 
 
 def load_checkpoint(path):
     ckpt = torch.load(path, map_location='cpu', weights_only=False)
-    model = TabNet(ckpt['feature_dims'], ckpt['num_classes'],
+    model = GatedFusion_MultiEncoder(ckpt['feature_dims'], ckpt['num_classes'],
                     n_steps=ckpt['best_hp']['n_steps'],
                     hidden_dim=ckpt['best_hp']['hidden_dim'],
                     gamma=ckpt['best_hp']['gamma'],

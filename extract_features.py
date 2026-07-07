@@ -18,7 +18,7 @@ Usage:
         --checkpoint results/models/best_model.pt \
         --clinical_csv new_data/clinical_data.csv \
         --tumor_csv new_data/tumor_level_features.csv \
-        --ratio_csv new_data/tumor_breast_ratio_features.csv \
+        --ratio_csv new_data/breast_level_enhancement_features.csv \
         --out_dir extracted_features/
 """
 import argparse

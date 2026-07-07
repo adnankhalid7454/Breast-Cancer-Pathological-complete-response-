@@ -1,5 +1,6 @@
 """
-Multi-modal TabNet-style architecture with gated late fusion.
+GatedFusion_MultiEncoder: multi-modal TabNet-style architecture with
+gated late fusion.
 
 Pipeline per modality (clinical / tumor-level / tumor-breast-ratio):
     raw features -> TabNetEncoder (sparse attention, N steps) -> hidden_dim vector
@@ -120,7 +121,7 @@ class GatedFusion(nn.Module):
         return self.mlp(gated)
 
 
-class TabNet(nn.Module):
+class GatedFusion_MultiEncoder(nn.Module):
     """Multi-modal classifier: one TabNetEncoder per modality + GatedFusion + linear head."""
 
     def __init__(self, feature_dims, num_classes,

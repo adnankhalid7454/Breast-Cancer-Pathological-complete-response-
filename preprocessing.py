@@ -1,6 +1,10 @@
 """
 Data loading and per-modality feature preprocessing.
 
+Expects three tabular CSVs per cohort (clinical / tumor-level / tumor-breast-ratio),
+produced upstream by your segmentation + feature-extraction pipeline (see README —
+that upstream step is NOT part of this repo). Row order across the three CSVs and
+the target CSV must correspond to the same subjects.
 """
 import numpy as np
 import pandas as pd

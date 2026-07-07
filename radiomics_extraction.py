@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
+VSCode-friendly compact MRI feature extraction script for Dataset 1 Duke structure.
 
-You only need to edit the paths in the CONFIG section below, then run this file.
+You only need to edit the paths in the CONFIG section below, then run this file in VSCode.
 
 Input structure:
 - PATIENT_ROOT/
@@ -18,21 +19,15 @@ Input structure:
     duke_002.nii.gz
 
 Outputs:
-- tumor_level_features.csv
-- breast_level_enhancement_features.csv          (kept for QC/debugging)
-- tumor_breast_ratio_features.csv                (kept for QC/debugging)
-- breast_ratio_enhancement_features.csv          <-- COMBINED modality 3 (use this one downstream)
-- clinical_features.csv
+- tumor_level_features.csv                — modality 1 (tumor-region radiomics)
+- breast_level_enhancement_features.csv    — modality 2: breast-level enhancement
+                                              features AND tumor-breast ratio
+                                              features, merged per patient at
+                                              extraction time (see
+                                              build_combined_breast_features())
+- clinical_features.csv                    — modality 0 (clinical variables)
 - qc_selected_features.csv
 - dataset1_manifest_found.csv
-
-Note on the combined file: the breast-level enhancement features and the
-tumor-breast ratio features are computed from the same masks/derived images
-for the same patients, and are merged into a single "enhancement + ratio"
-feature table (`breast_ratio_enhancement_features.csv`). This combined file
-is what should be passed as the 3rd modality (alongside clinical and
-tumor-level features) to the downstream training script — rather than
-picking one of the two separate files, which discards information.
 
 Install required packages:
     pip install SimpleITK pyradiomics pandas numpy tqdm
@@ -694,39 +689,26 @@ def tumor_breast_ratio_features(derived, tumor_mask, breast_side_mask, backgroun
     return out
 
 
-def combine_enhancement_and_ratio_features(breast_df, ratio_df):
+def build_combined_breast_features(derived, tumor_mask, breast_side_mask, background_breast_mask):
     """
-    Merge breast-level enhancement features and tumor-breast ratio features
-    into a single combined feature table (used as the 3rd input modality
-    downstream, alongside clinical and tumor-level features).
+    Compute breast-level enhancement features AND tumor-breast ratio features
+    for one patient and merge them into a single feature dict — done inline,
+    per patient, at extraction time, rather than as two separate passes that
+    get joined into a third file afterward. This is the modality-3 feature
+    set used downstream (alongside clinical + tumor-level features).
 
-    Both frames are built from the same masks/derived images for the same
-    patients in process_patient_selected_features(), but we merge on
-    patient_id/patient_key (rather than assuming positional alignment) so
-    this function is also safe to call on the two CSVs loaded independently
-    later (e.g. for combining an external cohort's features the same way).
-
-    A few volume columns (breast_side_volume_ml, background_breast_volume_ml)
-    are computed identically by both extractors — we drop the duplicate from
-    `breast_df` and keep the copy from `ratio_df` to avoid _x/_y suffixes.
+    A few volume stats (breast_side_volume_ml, background_breast_volume_ml)
+    are computed identically by both feature sets; we keep the enhancement
+    version and skip the duplicate from the ratio features rather than
+    silently overwrite it with an identical value.
     """
-    dup_cols = [c for c in ["breast_side_volume_ml", "background_breast_volume_ml"]
-                if c in breast_df.columns and c in ratio_df.columns]
-    breast_df_dedup = breast_df.drop(columns=dup_cols)
+    combined = OrderedDict()
+    combined.update(breast_level_enhancement_features(derived, breast_side_mask, background_breast_mask))
 
-    combined = breast_df_dedup.merge(
-        ratio_df,
-        on=["patient_id", "patient_key"],
-        how="inner",
-        validate="one_to_one",
-    )
-
-    if len(combined) != len(breast_df) or len(combined) != len(ratio_df):
-        warnings.warn(
-            f"combine_enhancement_and_ratio_features: row count changed after merge "
-            f"(breast_df={len(breast_df)}, ratio_df={len(ratio_df)}, combined={len(combined)}). "
-            f"Check for patient_id/patient_key mismatches between the two inputs."
-        )
+    ratio_feats = tumor_breast_ratio_features(derived, tumor_mask, breast_side_mask, background_breast_mask)
+    for k, v in ratio_feats.items():
+        if k not in combined:
+            combined[k] = v
 
     return combined
 
@@ -797,16 +779,7 @@ def process_patient_selected_features(row, extractor_with_shape, extractor_no_sh
 
         breast_row = OrderedDict(meta)
         breast_row.update(
-            breast_level_enhancement_features(
-                derived,
-                breast_side,
-                background_breast,
-            )
-        )
-
-        ratio_row = OrderedDict(meta)
-        ratio_row.update(
-            tumor_breast_ratio_features(
+            build_combined_breast_features(
                 derived,
                 tumor,
                 breast_side,
@@ -827,7 +800,7 @@ def process_patient_selected_features(row, extractor_with_shape, extractor_no_sh
         qc["tumor_mask_path"] = row["tumor_mask_path"]
         qc["breast_mask_path"] = row["breast_mask_path"]
 
-        return tumor_row, breast_row, ratio_row, qc
+        return tumor_row, breast_row, qc
 
     except Exception as e:
         qc["status"] = "failed"
@@ -838,7 +811,7 @@ def process_patient_selected_features(row, extractor_with_shape, extractor_no_sh
         qc["breast_mask_path"] = row.get("breast_mask_path", "")
 
         empty = OrderedDict(meta)
-        return empty, empty, empty, qc
+        return empty, empty, qc
 
 
 def create_clinical_features(valid_manifest):
@@ -916,13 +889,12 @@ def main():
 
     tumor_rows = []
     breast_rows = []
-    ratio_rows = []
     qc_rows = []
 
     print("Extracting selected features...")
 
     for _, row in tqdm(valid_manifest.iterrows(), total=len(valid_manifest)):
-        tumor_row, breast_row, ratio_row, qc = process_patient_selected_features(
+        tumor_row, breast_row, qc = process_patient_selected_features(
             row,
             extractor_with_shape,
             extractor_no_shape,
@@ -930,22 +902,14 @@ def main():
 
         tumor_rows.append(tumor_row)
         breast_rows.append(breast_row)
-        ratio_rows.append(ratio_row)
         qc_rows.append(qc)
 
     tumor_df = pd.DataFrame(tumor_rows)
-    breast_df = pd.DataFrame(breast_rows)
-    ratio_df = pd.DataFrame(ratio_rows)
+    breast_df = pd.DataFrame(breast_rows)  # already combined: enhancement + ratio features
     qc_df = pd.DataFrame(qc_rows)
-
-    # Combine breast-level enhancement + tumor-breast ratio into a single
-    # modality-3 feature table for downstream training/inference.
-    combined_df = combine_enhancement_and_ratio_features(breast_df, ratio_df)
 
     tumor_df.to_csv(OUTPUT_DIR / "tumor_level_features.csv", index=False)
     breast_df.to_csv(OUTPUT_DIR / "breast_level_enhancement_features.csv", index=False)
-    ratio_df.to_csv(OUTPUT_DIR / "tumor_breast_ratio_features.csv", index=False)
-    combined_df.to_csv(OUTPUT_DIR / "breast_ratio_enhancement_features.csv", index=False)
     qc_df.to_csv(OUTPUT_DIR / "qc_selected_features.csv", index=False)
 
     clinical_df = create_clinical_features(valid_manifest)
@@ -953,18 +917,14 @@ def main():
     print("\nDone.")
     print("Saved files:")
     print(f"  {OUTPUT_DIR / 'tumor_level_features.csv'}")
-    print(f"  {OUTPUT_DIR / 'breast_level_enhancement_features.csv'}  (QC only)")
-    print(f"  {OUTPUT_DIR / 'tumor_breast_ratio_features.csv'}  (QC only)")
-    print(f"  {OUTPUT_DIR / 'breast_ratio_enhancement_features.csv'}  <-- use this as modality 3")
+    print(f"  {OUTPUT_DIR / 'breast_level_enhancement_features.csv'}  (enhancement + ratio combined)")
     print(f"  {OUTPUT_DIR / 'clinical_features.csv'}")
     print(f"  {OUTPUT_DIR / 'qc_selected_features.csv'}")
     print(f"  {OUTPUT_DIR / 'dataset1_manifest_found.csv'}")
 
     print("\nShapes:")
     print(f"  tumor_level_features: {tumor_df.shape}")
-    print(f"  breast_level_enhancement_features: {breast_df.shape}")
-    print(f"  tumor_breast_ratio_features: {ratio_df.shape}")
-    print(f"  breast_ratio_enhancement_features (combined): {combined_df.shape}")
+    print(f"  breast_level_enhancement_features (combined): {breast_df.shape}")
     print(f"  clinical_features: {clinical_df.shape}")
     print(f"  qc: {qc_df.shape}")
 
