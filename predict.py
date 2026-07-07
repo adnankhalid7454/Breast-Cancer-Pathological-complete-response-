@@ -1,7 +1,5 @@
 """
-Run inference on a new dataset with a trained checkpoint (or an ensemble
-of per-fold checkpoints, majority-vote + averaged probability, matching
-the ensembling strategy used during training/external validation).
+Run inference on a new dataset with a trained checkpoint .
 
 Input CSVs must be the SAME modalities used in training (clinical /
 tumor-level / tumor-breast-ratio), already produced by your own upstream
