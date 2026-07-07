@@ -1,11 +1,10 @@
 """
 Run inference on a new dataset with a trained checkpoint (or an ensemble
-of per-fold checkpoints, majority-vote + averaged probability, matching
-the ensembling strategy used during training/external validation).
+of per-fold checkpoints, majority-vote + averaged probability).
 
 Input CSVs must be the SAME modalities used in training (clinical /
 tumor-level / tumor-breast-ratio), already produced by your own upstream
-segmentation + feature-extraction pipeline (see README — not part of this repo).
+segmentation + feature-extraction pipeline .
 
 Usage (single best model):
     python -m src.predict \
