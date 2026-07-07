@@ -5,13 +5,7 @@ NOTE on the binary-classification fix:
 For binary problems, sklearn's recall_score(average='macro') is mathematically
 identical to balanced_accuracy_score (both equal the mean of per-class recall).
 A naive macro-averaged specificity loop over both classes collapses to the same
-quantity too. That makes Balanced Accuracy == Sensitivity == Specificity by
-construction, regardless of the model — not a meaningful result.
-
-Here, for binary problems we report Sensitivity/Specificity relative to the
-positive class only, so they carry independent diagnostic information.
-Multi-class behavior (macro-averaged, one-vs-rest specificity) is unchanged
-and is valid as-is.
+quantity too. 
 """
 import os
 import numpy as np
