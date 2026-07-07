@@ -1,6 +1,6 @@
 """
 Train the multi-modal TabNet fusion model with 5-fold stratified CV,
-per-fold Optuna hyperparameter tuning, and (optional) external validation.
+per-fold hyperparameter tuning, and (optional) external validation.
 
 CRITICAL: each fold's checkpoint saves not just the model weights but also
 the FITTED preprocessing pipelines (RobustScaler / SelectKBest / PCA) and
